@@ -23,7 +23,7 @@ from typing import Any
 from app import presets
 
 
-__version__ = "3.3.2"  # multi-country per-country settings persistence
+__version__ = "3.3.3"  # per-country price label shows IDR/PHP/THB
 DEFAULT_COUNTRY = "PH"   # 基线仓库是 PH 版；GUI 启动时也可改成 ID/TH
 
 
