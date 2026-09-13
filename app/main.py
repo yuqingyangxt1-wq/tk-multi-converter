@@ -545,34 +545,50 @@ class App(tk.Tk):
     def _on_country_change(self):
         """User clicked a country radio. Switch the active country.
 
-        We capture any edits currently in the settings panel before resetting
-        them — by default we drop them, since most fields (price/brand/
-        category/text) are country-specific. Users who want a hand-tuned
-        field to carry across can re-enter it on the new country's panel.
+        v3.3.2: 每个国家的 settings 独立保存。切之前先把当前设置面板里
+        用户已经改过的字段持久化到当前国家；切之后 settings_by_country[<new>]
+        自动被读出，再重建设置面板。
         """
         new_country = self._var_country.get()
         cur = self.cfg.get("country", "PH")
         if new_country == cur:
             return
 
-        # Persist any current convert-panel edits before we nuke the settings section
+        # Persist any current convert-panel edits into settings_by_country[<cur>]
+        # so the user doesn't lose tweaks when switching away.
         if hasattr(self, "_convert_panel") and self._convert_panel is not None:
             try:
                 collected = self._convert_panel.collect()
                 if collected:
-                    self.cfg.setdefault("product_xlsx_settings", {}).update(collected)
+                    sbc = self.cfg.setdefault(
+                        "settings_by_country",
+                        cfg_mod._empty_settings_by_country(),
+                    )
+                    bucket = sbc.setdefault(cur, cfg_mod._settings_for(cur))
+                    for k, v in collected.items():
+                        if v not in (None, "", []):
+                            bucket[k] = v
             except Exception as e:
                 self.append_log(f"[country] 警告：采集旧设置失败 {e!r}")
 
-        # Reset settings to the new country's defaults
+        # Switch country — does NOT reset settings anymore (per-country persistence)
         cfg_mod.set_country(self.cfg, new_country)
         save_config(self.cfg)
 
         # Update window title to reflect new country
         self.title(f"{cfg_mod.app_name_for(new_country)} v{cfg_mod.__version__}")
 
-        # Rebuild the settings panel so the form fields match the new
-        # country's defaults (some fields only exist for ID, etc.)
+        # Rebuild the convert section so the compact settings panel reflects the
+        # new country's settings (it has its own cached _settings dict).
+        if "convert" in self._sections:
+            old_convert = self._sections["convert"]
+            old_convert.destroy()
+            self._sections["convert"] = tk.Frame(self._section_container, bg="#ffffff")
+            self._build_section_convert(self._sections["convert"])
+            if str(self._tabbar.current()) == "convert":
+                self._sections["convert"].pack(fill="both", expand=True)
+
+        # Rebuild the settings section too — it has per-field state.
         if "settings" in self._sections:
             old = self._sections["settings"]
             old.destroy()
@@ -869,11 +885,19 @@ class App(tk.Tk):
         save_config(self.cfg)
 
     def _auto_save_settings(self):
-        # Collect from the compact panel and merge.
+        # Collect from the compact panel and merge into settings_by_country[<country>].
         new = self._convert_panel.collect()
-        s = self.cfg.setdefault("product_xlsx_settings", {})
+        cur = self.cfg.get("country", "PH")
+        sbc = self.cfg.setdefault(
+            "settings_by_country",
+            cfg_mod._empty_settings_by_country(),
+        )
+        bucket = sbc.setdefault(cur, cfg_mod._settings_for(cur))
         for k, v in new.items():
-            s[k] = v
+            if v not in (None, "", []):
+                bucket[k] = v
+        # Keep the legacy mirror consistent.
+        self.cfg["product_xlsx_settings"] = dict(bucket)
         # Also save source path so it sticks across runs.
         self.cfg["product_xlsx_last"] = self.var_source.get()
         self.cfg["product_xlsx_output_dir"] = self.var_output.get()
@@ -1058,7 +1082,12 @@ class App(tk.Tk):
         callbacks; suppress the success dialog and any error noise so we
         don't ruin the user's flow with popups for every keystroke.
         """
-        s = self.cfg.setdefault("product_xlsx_settings", {})
+        cur = self.cfg.get("country", "PH")
+        sbc = self.cfg.setdefault(
+            "settings_by_country",
+            cfg_mod._empty_settings_by_country(),
+        )
+        s = sbc.setdefault(cur, cfg_mod._settings_for(cur))
         for k, v in self.set_vars.items():
             if isinstance(v, tk.Text):
                 s[k] = v.get("1.0", "end-1c")
@@ -1069,6 +1098,8 @@ class App(tk.Tk):
                     s[k] = ""
         for k, v in self.set_checks.items():
             s[k] = bool(v.get())
+        # Keep legacy mirror consistent.
+        self.cfg["product_xlsx_settings"] = dict(s)
         if hasattr(self, "colmap_vars"):
             self.cfg["source_column_mapping"] = {
                 k: v.get() for k, v in self.colmap_vars.items()
