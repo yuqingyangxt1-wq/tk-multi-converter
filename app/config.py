@@ -23,7 +23,7 @@ from typing import Any
 from app import presets
 
 
-__version__ = "3.3.4"  # fix: single-file mode country pass-through + filename + price/qty override semantics
+__version__ = "3.3.5"  # fix: country switch left rebuilt panes invisible (TabBar.current() missing → AttributeError silently aborted _on_country_change)
 DEFAULT_COUNTRY = "PH"   # 基线仓库是 PH 版；GUI 启动时也可改成 ID/TH
 
 

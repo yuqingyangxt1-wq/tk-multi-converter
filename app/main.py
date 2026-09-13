@@ -181,6 +181,10 @@ class TabBar(tk.Frame):
         if self._on_change:
             self._on_change(key)
 
+    def current(self) -> str | None:
+        """Return the key of the currently active tab, or None if not set."""
+        return self._active
+
 
 # ---------------------------------------------------------------------------
 # Drag-or-click zone for the source xlsx
@@ -585,8 +589,6 @@ class App(tk.Tk):
             old_convert.destroy()
             self._sections["convert"] = tk.Frame(self._section_container, bg="#ffffff")
             self._build_section_convert(self._sections["convert"])
-            if str(self._tabbar.current()) == "convert":
-                self._sections["convert"].pack(fill="both", expand=True)
 
         # Rebuild the settings section too — it has per-field state.
         if "settings" in self._sections:
@@ -594,9 +596,12 @@ class App(tk.Tk):
             old.destroy()
             self._sections["settings"] = tk.Frame(self._section_container, bg="#ffffff")
             self._build_section_settings(self._sections["settings"])
-            # If settings was visible, restore visibility
-            if str(self._tabbar.current()) == "settings":
-                self._sections["settings"].pack(fill="both", expand=True)
+
+        # Re-pack whichever section is currently active so the user immediately
+        # sees the rebuilt UI (instead of a blank pane when their active tab is
+        # one of the frames we just destroyed and rebuilt).
+        active_key = self._tabbar.current() if hasattr(self._tabbar, "current") else "convert"
+        self._show_section(active_key or "convert")
 
         self.append_log(f"[country] 已切换到 {cfg_mod.app_name_for(new_country)}")
 
