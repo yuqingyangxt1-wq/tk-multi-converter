@@ -1009,10 +1009,14 @@ class App(tk.Tk):
             return
         out = self._resolve_output_dir()
         tpl = template_path_for(self.cfg.get("country", "PH"))
+        if not tpl.exists():
+            messagebox.showerror("模板缺失", f"找不到模板文件：\n{tpl}\n请确认 assets/ 目录完整。")
+            return
         settings = get_settings(self.cfg)
         mapping = self.cfg.get("source_column_mapping") or {}
 
         def task(progress, log, **_):
+            country = self.cfg.get("country", "PH")
             progress(0.05, f"读取产品池 {pool_path.name}…")
             products = load_pool(pool_path)
             if not products:
@@ -1039,14 +1043,14 @@ class App(tk.Tk):
                     for p in products:
                         file_rows.extend(
                             build_rows_for_product(
-                                p, settings, self.cfg.get("country", "PH"),
+                                p, settings, country,
                                 copy_suffixes=[copies_suffixes[c_idx]],
                                 apply_suffix_to_first=True,
                             )
                         )
                     tag = f"copy{c_idx + 1:02d}of{copies:02d}" if copies > 1 else "copy01of01"
-                    out_path = out / f"{stem}_TKPH_{ts}_{tag}.xlsx"
-                    write_tiktok_xlsx(out_path, file_rows, tpl)
+                    out_path = out / f"{stem}_TK{country}_{ts}_{tag}.xlsx"
+                    write_tiktok_xlsx(out_path, file_rows, country)
                     output_paths.append(out_path)
                     total_rows += len(file_rows)
             else:
@@ -1056,9 +1060,8 @@ class App(tk.Tk):
                 )
                 rows = []
                 for i, p in enumerate(products, 1):
-                    rows.extend(build_rows_for_product(p, settings, self.cfg.get("country", "PH"), copy_suffixes=copies_suffixes))
+                    rows.extend(build_rows_for_product(p, settings, country, copy_suffixes=copies_suffixes))
                     progress(0.2 + 0.6 * (i / len(products)), f"已处理 {i}/{len(products)}…")
-                country = self.cfg.get("country", "PH")
                 out_path = out / f"{stem}_TK{country}_{ts}.xlsx"
                 write_tiktok_xlsx(out_path, rows, country)
                 output_paths.append(out_path)
