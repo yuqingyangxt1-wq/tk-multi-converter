@@ -23,7 +23,7 @@ from typing import Any
 from app import presets
 
 
-__version__ = "3.3.5"  # fix: country switch left rebuilt panes invisible (TabBar.current() missing → AttributeError silently aborted _on_country_change)
+__version__ = "3.3.6"  # fix: settings tab edits didn't refresh the compact panel (and vice-versa); country-switch also dropped un-FocusOut edits
 DEFAULT_COUNTRY = "PH"   # 基线仓库是 PH 版；GUI 启动时也可改成 ID/TH
 
 

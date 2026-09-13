@@ -265,6 +265,7 @@ class ConvertSettingsPanel(tk.Frame):
         self._on_change = on_change
         self._vars: dict[str, tk.Variable] = {}
         self._checks: dict[str, tk.BooleanVar] = {}
+        self._suppress = False  # v3.3.6: when True, trace callbacks are silent
         self._build()
 
     # -- helpers ----------------------------------------------------------
@@ -415,12 +416,49 @@ class ConvertSettingsPanel(tk.Frame):
         return out
 
     def _on_check_change(self, key: str):
+        if self._suppress:
+            return
         enabled = bool(self._checks[key].get())
         self._apply_visual_state(key, enabled)
         self._on_change()
 
     def _on_text_change(self, _key: str):
+        if self._suppress:
+            return
         self._on_change()
+
+    def refresh_from_settings(self, settings: dict[str, Any]):
+        """Pull every key from ``settings`` into our widgets.
+
+        Used when another tab / external code mutates the shared settings dict
+        (e.g. the 「设置」 tab saves) and we need the compact panel UI to
+        reflect the new values without a full rebuild. Trace callbacks are
+        suppressed during the sync so we don't bounce back into _on_change.
+        """
+        self._suppress = True
+        try:
+            for key, var in self._vars.items():
+                if key not in settings:
+                    continue
+                target = settings[key]
+                if isinstance(target, (int, float)):
+                    target = str(target)
+                try:
+                    var.set(str(target))
+                except tk.TclError:
+                    pass
+            for key, var in self._checks.items():
+                if key not in settings:
+                    continue
+                try:
+                    var.set(bool(settings[key]))
+                except tk.TclError:
+                    pass
+            # Refresh visual state (enable/disable rows) from checkbox values.
+            for enabled_key in list(self._checks.keys()):
+                self._apply_visual_state(enabled_key, bool(self._checks[enabled_key].get()))
+        finally:
+            self._suppress = False
 
     def _apply_visual_state(self, enabled_key: str, enabled: bool):
         # Map the *_enabled flag to its corresponding value key, then toggle
@@ -560,6 +598,7 @@ class App(tk.Tk):
 
         # Persist any current convert-panel edits into settings_by_country[<cur>]
         # so the user doesn't lose tweaks when switching away.
+        cur_bucket = None
         if hasattr(self, "_convert_panel") and self._convert_panel is not None:
             try:
                 collected = self._convert_panel.collect()
@@ -568,12 +607,33 @@ class App(tk.Tk):
                         "settings_by_country",
                         cfg_mod._empty_settings_by_country(),
                     )
-                    bucket = sbc.setdefault(cur, cfg_mod._settings_for(cur))
+                    cur_bucket = sbc.setdefault(cur, cfg_mod._settings_for(cur))
                     for k, v in collected.items():
                         if v not in (None, "", []):
-                            bucket[k] = v
+                            cur_bucket[k] = v
             except Exception as e:
                 self.append_log(f"[country] 警告：采集旧设置失败 {e!r}")
+
+        # v3.3.6: also harvest the 「设置」 tab's StringVar/BooleanVar/Text
+        # widgets. Otherwise any un-FocusOut edits there would be lost on
+        # country switch (its trace_add only fires on write, not destroy).
+        if cur_bucket is not None and hasattr(self, "set_vars"):
+            try:
+                for k, v in self.set_vars.items():
+                    if isinstance(v, tk.Text):
+                        cur_bucket[k] = v.get("1.0", "end-1c")
+                    else:
+                        try:
+                            cur_bucket[k] = v.get()
+                        except tk.TclError:
+                            pass
+                for k, v in self.set_checks.items():
+                    try:
+                        cur_bucket[k] = bool(v.get())
+                    except tk.TclError:
+                        pass
+            except Exception as e:
+                self.append_log(f"[country] 警告：采集完整设置面板失败 {e!r}")
 
         # Switch country — does NOT reset settings anymore (per-country persistence)
         cfg_mod.set_country(self.cfg, new_country)
@@ -745,7 +805,7 @@ class App(tk.Tk):
                 v = tk.StringVar(value=str(s.get(key, "")))
                 self.set_vars[key] = v
                 ttk.Entry(row, textvariable=v, width=60).pack(side="left", fill="x", expand=True)
-                v.trace_add("write", lambda *_: self._auto_save_full_settings())
+                v.trace_add("write", lambda *_: self._maybe_auto_save_full_settings())
 
         def add_int(key, label):
             row = tk.Frame(inner, bg="#ffffff"); row.pack(fill="x", pady=2)
@@ -753,14 +813,14 @@ class App(tk.Tk):
             v = tk.IntVar(value=int(s.get(key, 0) or 0))
             self.set_vars[key] = v
             ttk.Spinbox(row, textvariable=v, from_=0, to=99999, width=10).pack(side="left")
-            v.trace_add("write", lambda *_: self._auto_save_full_settings())
+            v.trace_add("write", lambda *_: self._maybe_auto_save_full_settings())
 
         def add_check(key, label):
             v = tk.BooleanVar(value=bool(s.get(key, False)))
             self.set_checks[key] = v
             tk.Checkbutton(inner, text=label, variable=v, bg="#ffffff",
                            activebackground="#ffffff",
-                           command=self._auto_save_full_settings).pack(
+                           command=self._maybe_auto_save_full_settings).pack(
                 anchor="w", padx=4, pady=1,
             )
 
@@ -808,7 +868,7 @@ class App(tk.Tk):
             v = tk.StringVar(value=str(default_col or ""))
             self.colmap_vars[field_name] = v
             ttk.Entry(row, textvariable=v, width=40).pack(side="left", fill="x", expand=True)
-            v.trace_add("write", lambda *_: self._auto_save_full_settings())
+            v.trace_add("write", lambda *_: self._maybe_auto_save_full_settings())
 
         ttk.Button(inner, text="保存设置", command=self._save_full_settings).pack(anchor="e", pady=12)
 
@@ -908,7 +968,44 @@ class App(tk.Tk):
         # Also save source path so it sticks across runs.
         self.cfg["product_xlsx_last"] = self.var_source.get()
         self.cfg["product_xlsx_output_dir"] = self.var_output.get()
+        # v3.3.6: push the just-collected values into the 「设置」 tab so
+        # both tabs always show the same values without a manual reload.
+        self._sync_full_panel(bucket)
         save_config(self.cfg)
+
+    def _sync_full_panel(self, settings: dict[str, Any]):
+        """Push ``settings`` into the 「设置」 tab's StringVar/BooleanVar/Text.
+
+        Suppresses our own trace/command callbacks during sync so the panel
+        doesn't immediately re-save the same values we just pushed.
+        """
+        if not hasattr(self, "set_vars"):
+            return
+        self._suppress_sync = True
+        try:
+            for key, var in self.set_vars.items():
+                if key not in settings:
+                    continue
+                target = settings[key]
+                if isinstance(var, tk.Text):
+                    var.delete("1.0", "end")
+                    var.insert("1.0", str(target))
+                    continue
+                if isinstance(target, (int, float)):
+                    target = str(target)
+                try:
+                    var.set(str(target))
+                except tk.TclError:
+                    pass
+            for key, var in self.set_checks.items():
+                if key not in settings:
+                    continue
+                try:
+                    var.set(bool(settings[key]))
+                except tk.TclError:
+                    pass
+        finally:
+            self._suppress_sync = False
 
     # ----- Conversion driver ---------------------------------------------
 
@@ -1114,6 +1211,9 @@ class App(tk.Tk):
             self.cfg["source_column_mapping"] = {
                 k: v.get() for k, v in self.colmap_vars.items()
             }
+        # v3.3.6: keep the compact 「转化」 panel in sync so its StringVar/BooleanVar
+        # values reflect the just-saved settings, instead of going stale.
+        self._sync_compact_panel(s)
         try:
             save_config(self.cfg)
         except OSError as e:
@@ -1129,6 +1229,33 @@ class App(tk.Tk):
             self._save_full_settings(silent=True)
         except OSError:
             pass  # already warned by the explicit save path
+
+    def _maybe_auto_save_full_settings(self):
+        """Wrapper used by Settings-tab trace/command callbacks.
+
+        v3.3.6: when we are pushing values *into* the widgets via
+        _sync_full_panel (e.g. the compact panel just saved), we suppress
+        the auto-save so we don't write the same values back in a loop.
+        """
+        if getattr(self, "_suppress_sync", False):
+            return
+        self._auto_save_full_settings()
+
+    def _sync_compact_panel(self, settings: dict[str, Any]):
+        """Push ``settings`` into the ConvertSettingsPanel so both tabs agree.
+
+        No-op when the compact panel hasn't been built yet (e.g. during initial
+        construction) or when the panel was destroyed by a country switch.
+        Suppresses the panel's trace callbacks during sync to avoid bouncing
+        back into _auto_save_settings with no real change.
+        """
+        panel = getattr(self, "_convert_panel", None)
+        if panel is None or not panel.winfo_exists():
+            return
+        try:
+            panel.refresh_from_settings(settings)
+        except tk.TclError:
+            pass  # panel mid-destroy; skip silently
 
     # ----- Pool list ------------------------------------------------------
 
