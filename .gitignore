@@ -1,0 +1,15 @@
+.DS_Store
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+.env
+*.log
+config.json
+images/
+产品池/
+# Local dryrun outputs (don't commit — can be 100s of MB)
+dryrun_out/
