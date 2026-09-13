@@ -202,15 +202,17 @@ _ID_CATEGORY_TRANSLATION: dict[str, str] = {
 
 # ---------------------------------------------------------------------------
 # ID-only: product_property PREFERRED 默认值
-# v3.3.8 fix: 清空 — 让 HiddenAttr 自动选 T-shirt 类目下的首个合法值
-# (新模板 HiddenAttr R153=V-Neck, R51=Musim semi, R115=Dicuci dengan Tangan Saja)。
-# 之前用 Cowl Neck / Semua musim / Cuci Kering 是 v1.0.14 假设的"PREFERRED 优先"，
-# 但 TikTok 卖家后台该账号 T-shirt 类目下拉里可能没启用这两个值，
-# 触发红框 "Select a value from the dropdown menu"。
-# v3.3.8 也同步换了 assets-id/batch-product-source.xlsx 为 20260913 官方下载版
-# (md5 3934da7d1a2f89464863fd6aca054b15)，与卖家后台当前模板保持一致。
+# v3.3.9 fix: 仅钉死 Neckline=Cowl Neck — 用户 T-shirt 实际是套头圆领款
+# (源表无 Neckline 列, 走 PREFERRED 默认比 HiddenAttr R153=V-Neck 更准)。
+# 之前 v3.3.8 清空 PREFERRED 让 HiddenAttr 决定 → 全部填 V-Neck 与产品不符。
+# Season/Care 仍走 HiddenAttr 默认 (Musim semi / Dicuci dengan Tangan Saja),
+# 因为 v3.3.7 PREFERRED 里的 Semua musim / Cuci Kering 在卖家 T-shirt 后台
+# 下拉里没勾选, 触发红框 "Select a value from the dropdown menu"。
+# v3.3.9 也保留 v3.3.8 的新模板 (md5 3934da7d) + pair 8=100403 Waist 修正。
 # ---------------------------------------------------------------------------
-_ID_PROPERTY_PREFERRED: dict[str, str] = {}
+_ID_PROPERTY_PREFERRED: dict[str, str] = {
+    "product_property/100393": "Cowl Neck",     # Neckline — 套头圆领 T-shirt 专用
+}
 
 
 # ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ from typing import Any
 from app import presets
 
 
-__version__ = "3.3.8"  # fix: ID — replace bundled template with 20260913 official download (md5 3934da7d1a2f89464863fd6aca054b15) + clear _ID_PROPERTY_PREFERRED so HiddenAttr's first valid T-shirt value (R153=V-Neck, R51=Musim semi, R115=Dicuci dengan Tangan Saja) wins. Previous PREFERRED (Cowl Neck / Semua musim / Cuci Kering) made TikTok Shop backend throw "Select a value from the dropdown menu" because the seller's T-shirt category dropdown didn't have those specific options enabled.
+__version__ = "3.3.9"  # fix: ID — restore PREFERRED only for Neckline (Cowl Neck, user's 套头圆领 T-shirt). Season/Care still go through HiddenAttr first-row defaults (Musim semi / Dicuci dengan Tangan Saja) because v3.3.7 PREFERRED Semua musim / Cuci Kering were rejected by TikTok Shop seller's T-shirt category dropdown
 DEFAULT_COUNTRY = "PH"   # 基线仓库是 PH 版；GUI 启动时也可改成 ID/TH
 
 
