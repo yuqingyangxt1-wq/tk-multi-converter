@@ -23,7 +23,7 @@ from typing import Any
 from app import presets
 
 
-__version__ = "3.3.6"  # fix: settings tab edits didn't refresh the compact panel (and vice-versa); country-switch also dropped un-FocusOut edits
+__version__ = "3.3.7"  # fix: ID HiddenAttr pair 7/8 were mapped to wrong prop_id (Cuci Kering written into 100400 Stretch instead of 100401 Care); also filter Forbid columns from HiddenStyle
 DEFAULT_COUNTRY = "PH"   # 基线仓库是 PH 版；GUI 启动时也可改成 ID/TH
 
 

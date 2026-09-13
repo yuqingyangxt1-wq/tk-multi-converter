@@ -238,8 +238,13 @@ _ID_PROPERTY_PAIR_INDEX: list[tuple[int, int, str]] = [
     (9, 10, "product_property/100397"),
     (11, 12, "product_property/100398"),
     (13, 14, "product_property/100399"),
-    (15, 16, "product_property/100400"),
-    (17, 18, "product_property/100401"),
+    # v3.3.7 fix: HiddenAttr pair 7 (C15/C16) is actually **Care 100401**
+    # (values like Cuci Kering / Jangan Dicuci), and pair 8 (C17/C18) is
+    # **Stretch 100400** (values like Sepinggang / Di Atas Pinggan) — the
+    # previous ordering (100400 then 100401) caused Cuci Kering to be
+    # written into C38 (Stretch) instead of C39 (Care).
+    (15, 16, "product_property/100401"),
+    (17, 18, "product_property/100400"),
 ]
 
 
@@ -266,16 +271,52 @@ def _get_property_fallbacks(country: str, category: str) -> dict[str, str]:
         if "HiddenAttr" not in wb.sheetnames:
             return {}
         ha = wb["HiddenAttr"]
+        # v3.3.7: also load HiddenStyle to skip columns marked "Forbid" for
+        # the active category. HiddenStyle columns map 1:1 to Template prop
+        # columns (C31 → 100157, C32 → 100198, ..., C40 → 100403); C30 is
+        # the legacy "None" gap and is unused.
+        hs_forbids: set[str] = set()
+        if "HiddenStyle" in wb.sheetnames:
+            hs = wb["HiddenStyle"]
+            cat_lower = (category or "").strip().lower()
+            # HiddenStyle columns C31-C40 map 1:1 to Template prop columns
+            # (C31 → cols[30] = product_property/100157, ..., C40 → cols[39] =
+            # product_property/100403). We index by column letter position
+            # rather than header name to avoid fragility across locales.
+            try:
+                cols = get_columns_for("ID")
+            except (OSError, KeyError):
+                cols = []
+            for r in range(2, hs.max_row + 1):
+                hs_cat = hs.cell(row=r, column=1).value
+                if not hs_cat:
+                    continue
+                hs_cat_l = str(hs_cat).strip().lower()
+                if cat_lower not in hs_cat_l and hs_cat_l not in cat_lower:
+                    continue
+                # row matches our category — pull its Forbid flags.
+                # HiddenStyle C31..C40 map to cols[30..39] (1-based 31 → index 30).
+                for tmpl_col in range(31, 41):
+                    cell_idx = tmpl_col - 1  # 0-based index in cols list
+                    if cell_idx >= len(cols):
+                        continue
+                    prop_id = cols[cell_idx]
+                    flag = str(hs.cell(row=r, column=tmpl_col).value or "").strip().lower()
+                    if flag == "forbid":
+                        hs_forbids.add(prop_id)
+                break
         # Build fallback: first value per prop_id whose category matches
         # `category` (substring match on either side, to tolerate minor
         # whitespace / separator differences). Preserve Excel row order so
         # the chosen value is the template's recommended default (R2-style),
-        # not alphabetical-first.
+        # not alphabetical-first. Skip Forbid columns.
         by_prop: dict[str, str] = {}
         cat_lower = (category or "").strip().lower()
         max_row = ha.max_row
         for cat_col, val_col, prop_id in _ID_PROPERTY_PAIR_INDEX:
             if prop_id in by_prop:
+                continue
+            if prop_id in hs_forbids:
                 continue
             for r in range(2, max_row + 1):
                 cat_v = ha.cell(row=r, column=cat_col).value
