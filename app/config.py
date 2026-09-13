@@ -3,6 +3,14 @@
 v3.3 (multi-country): 支持 ID / PH / TH 三国切换；settings 来自 app.presets，
 country 字段默认 PH（基线仓库是 PH 版）。GUI 切换国家时写入 cfg["country"]，
 load_config() 据此从 presets 取对应 settings。
+
+v3.3.2 修复 (2026-09-13): 每个国家单独保存一份 product_xlsx_settings，
+切换国家不再 reset 已设置的参数。结构：
+  cfg["settings_by_country"]["ID"] = {...}
+  cfg["settings_by_country"]["PH"] = {...}
+  cfg["settings_by_country"]["TH"] = {...}
+兼容老配置：cfg["product_xlsx_settings"] 在 load 时迁移到
+settings_by_country[当前 country]。
 """
 from __future__ import annotations
 
@@ -15,8 +23,18 @@ from typing import Any
 from app import presets
 
 
-__version__ = "3.3.0"  # multi-country: ID/PH/TH 三国合一 (基线 PH v3.2.3 + ID v1.0.14 + TH v1.0.1)
+__version__ = "3.3.2"  # multi-country per-country settings persistence
 DEFAULT_COUNTRY = "PH"   # 基线仓库是 PH 版；GUI 启动时也可改成 ID/TH
+
+
+def _settings_for(country: str) -> dict[str, Any]:
+    """Return the presets-defined default settings for a country (fresh copy)."""
+    return dict(presets.by_country(country).settings)
+
+
+def _empty_settings_by_country() -> dict[str, dict[str, Any]]:
+    """Build a fresh {ID:{}, PH:{}, TH:{}} seeded with each country's preset defaults."""
+    return {code: _settings_for(code) for code in presets.PRESETS}
 
 
 def app_name_for(country: str) -> str:
@@ -49,16 +67,26 @@ def get_assets_dir(country: str | None = None) -> Path:
 
 
 def default_config(country: str = DEFAULT_COUNTRY) -> dict[str, Any]:
-    """The shipped defaults — sourced from presets.by_country(country)."""
+    """The shipped defaults — sourced from presets.by_country(country).
+
+    settings_by_country holds one settings dict per country so the user's
+    tweaks persist across country switches. product_xlsx_settings is kept
+    as a legacy mirror of settings_by_country[country] for backward compat
+    with any caller that still reads the old key.
+    """
     p = presets.by_country(country)
     return {
-        "version": 2,
+        "version": 3,
         "country": country,                      # 多国家: 'ID' / 'PH' / 'TH'
         "product_xlsx_last": "",
         "product_xlsx_output_dir": "",
         "product_xlsx_last_output_dir": "",
         "product_pool_dir": "",
-        "product_xlsx_settings": dict(p.settings),  # country-specific defaults
+        # v3.3.2: per-country persisted settings
+        "settings_by_country": _empty_settings_by_country(),
+        # legacy mirror — kept so older code paths that read the old key
+        # still work; load_config() rewrites this from settings_by_country.
+        "product_xlsx_settings": dict(p.settings),
         # Source column mapping (override which EasyBoss/源列 maps to what)
         # If a key is empty/None, the reader falls back to auto-detection.
         "source_column_mapping": {
@@ -102,6 +130,11 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
     """Load config from disk, merging with defaults so new keys appear.
 
     If cfg has no 'country' key (legacy PH-only files), assume PH.
+
+    Migration: if on-disk cfg has the v3.3 'product_xlsx_settings' key but
+    no 'settings_by_country', move it into settings_by_country[<current country>]
+    so the user's tweaks survive the upgrade instead of being lost the first
+    time they switch country.
     """
     p = path or config_path()
     country = DEFAULT_COUNTRY
@@ -119,6 +152,18 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
         try:
             with p.open("r", encoding="utf-8") as f:
                 on_disk = json.load(f)
+            # Migrate v3.3 (or v3.2) 'product_xlsx_settings' into
+            # settings_by_country[<country>] before merging.
+            legacy = on_disk.pop("product_xlsx_settings", None)
+            if legacy and isinstance(legacy, dict):
+                sbc = cfg.setdefault("settings_by_country", {})
+                # Stash legacy values into the slot for whatever country was active.
+                bucket = sbc.setdefault(country, {})
+                # Don't clobber — merge: existing defaults win for missing keys,
+                # but legacy values win for keys present.
+                for k, v in legacy.items():
+                    if v not in (None, "", []):
+                        bucket[k] = v
             # Shallow merge at top level, deep merge for *_settings / mapping
             for k, v in on_disk.items():
                 if isinstance(v, dict) and isinstance(cfg.get(k), dict):
@@ -128,6 +173,11 @@ def load_config(path: Path | None = None) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             # Corrupt config → fall back to defaults but don't overwrite
             pass
+    # Always mirror the active country's settings into the legacy key so
+    # any caller still reading the old field sees consistent data.
+    cfg["product_xlsx_settings"] = dict(
+        cfg.get("settings_by_country", {}).get(country, _settings_for(country))
+    )
     return cfg
 
 
@@ -139,17 +189,30 @@ def save_config(cfg: dict[str, Any], path: Path | None = None) -> None:
 
 
 def get_settings(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Return the product_xlsx_settings sub-dict, applying defaults for missing keys."""
+    """Return the active country's settings, with that country's preset
+    defaults filled in for any missing keys.
+    """
     country = cfg.get("country", DEFAULT_COUNTRY)
-    defaults = default_config(country)["product_xlsx_settings"]
-    s = dict(defaults)
-    s.update(cfg.get("product_xlsx_settings", {}))
-    return s
+    sbc = cfg.setdefault("settings_by_country", {})
+    bucket = sbc.setdefault(country, _settings_for(country))
+    # Fill in any newly-added preset keys for this country.
+    defaults = _settings_for(country)
+    out = dict(defaults)
+    out.update(bucket)
+    # Mirror to legacy key for callers that still read it.
+    cfg["product_xlsx_settings"] = dict(out)
+    return out
 
 
 def update_settings(cfg: dict[str, Any], **kwargs: Any) -> None:
-    cfg.setdefault("product_xlsx_settings", {})
-    cfg["product_xlsx_settings"].update(kwargs)
+    """Update the active country's settings in place (does not touch other
+    countries' saved values).
+    """
+    country = cfg.get("country", DEFAULT_COUNTRY)
+    sbc = cfg.setdefault("settings_by_country", {})
+    bucket = sbc.setdefault(country, _settings_for(country))
+    bucket.update(kwargs)
+    cfg["product_xlsx_settings"] = dict(bucket)
 
 
 def country_choices() -> list[tuple[str, str]]:
@@ -160,16 +223,20 @@ def country_choices() -> list[tuple[str, str]]:
 def set_country(cfg: dict[str, Any], country: str) -> None:
     """Switch config to a different country.
 
-    Resets product_xlsx_settings to that country's defaults — user has to
-    re-tune their tweaks for the new country's pipeline. The rest of cfg
-    (paths, source_column_mapping) is preserved.
+    v3.3.2: 每个国家的 settings 独立保存 — 切换后只切换 cfg['country']，
+    不重置已保存的参数。其它路径/列映射也保留。
     """
     if country not in presets.PRESETS:
         raise ValueError(
             f"Unknown country: {country!r}. Available: {list(presets.PRESETS)}"
         )
     cfg["country"] = country
-    cfg["product_xlsx_settings"] = dict(presets.by_country(country).settings)
+    # Ensure the new country has a bucket (first visit seeds it from presets).
+    sbc = cfg.setdefault("settings_by_country", _empty_settings_by_country())
+    sbc.setdefault(country, _settings_for(country))
+    # Mirror the new country's settings into the legacy key for any
+    # downstream code that still reads the old field.
+    cfg["product_xlsx_settings"] = dict(sbc[country])
 
 
 # v3.3.0: 兼容旧代码里的 APP_NAME 引用
