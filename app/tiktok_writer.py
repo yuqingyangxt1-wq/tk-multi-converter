@@ -218,18 +218,19 @@ OutputRow = dict[str, Any]
 # ---------------------------------------------------------------------------
 # ID-only: property defaults from HiddenAttr
 # ---------------------------------------------------------------------------
-# 9 对 HiddenAttr pair (C1-C18) → Template C29-C37 (PH) / C30-C38 (TH) / C31-C39 (ID)
-# 后 1 列 (100403) 没有 HiddenAttr pair → 留空。
-# HiddenAttr 列对 → prop_id:
-#   pair 0 (C1/C2)   → 100157 Material
-#   pair 1 (C3/C4)   → 100198 Pattern
-#   pair 2 (C5/C6)   → 100393 Neckline
-#   pair 3 (C7/C8)   → 100395 Sleeve
-#   pair 4 (C9/C10)  → 100397 Season
-#   pair 5 (C11/C12) → 100398 Style
-#   pair 6 (C13/C14) → 100399 Fit type
-#   pair 7 (C15/C16) → 100400 Stretch
-#   pair 8 (C17/C18) → 100401 Care
+# 9 对 HiddenAttr pair (C1-C18) → Template C31-C40 (ID)
+# 注: 新模板 HiddenAttr R1 的列对含义:
+#   C1/C2   Material 100157,  C3/C4   Pattern 100198,
+#   C5/C6   Neckline 100393,  C7/C8   Sleeve 100395,
+#   C9/C10  Season 100397,    C11/C12 Style 100398,
+#   C13/C14 Fit 100399,       C15/C16 Care 100401,
+#   C17/C18 Waist 100403
+# 因此 Template 列映射 (ID):
+#   C31=Material  C32=Pattern  C33=Neckline  C34=Sleeve
+#   C35=Season    C36=Style    C37=Fit       C38=**Stretch 100400 (无 HiddenAttr pair → Forbid 留空)**
+#   C39=Care      C40=Waist
+# v3.3.7 fix: 之前 pair 7/8 注释反了，把 Cuci Kering 写到了 Stretch 列；
+# v3.3.8 fix: 进一步确认 pair 8 (C17/C18) = Waist 100403，不是 Stretch。
 _ID_PROPERTY_PAIR_INDEX: list[tuple[int, int, str]] = [
     (1, 2, "product_property/100157"),
     (3, 4, "product_property/100198"),
@@ -238,13 +239,13 @@ _ID_PROPERTY_PAIR_INDEX: list[tuple[int, int, str]] = [
     (9, 10, "product_property/100397"),
     (11, 12, "product_property/100398"),
     (13, 14, "product_property/100399"),
-    # v3.3.7 fix: HiddenAttr pair 7 (C15/C16) is actually **Care 100401**
-    # (values like Cuci Kering / Jangan Dicuci), and pair 8 (C17/C18) is
-    # **Stretch 100400** (values like Sepinggang / Di Atas Pinggan) — the
-    # previous ordering (100400 then 100401) caused Cuci Kering to be
-    # written into C38 (Stretch) instead of C39 (Care).
+    # pair 7 (C15/C16) = Care 100401 → 写到 Template C39
     (15, 16, "product_property/100401"),
-    (17, 18, "product_property/100400"),
+    # pair 8 (C17/C18) = Waist 100403 → 写到 Template C40
+    # (v3.3.7 之前错写成 100400 Stretch, 导致 Waist 列被 Forbid 过滤后空,
+    #  而 HiddenStyle R11 T-shirt 行 C40=Forbid 所以 Waist 本来就该空, 看似无害但 pair 8
+    #  本质对应的是 Waist 不是 Stretch)
+    (17, 18, "product_property/100403"),
 ]
 
 
