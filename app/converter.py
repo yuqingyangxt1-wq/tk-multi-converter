@@ -319,14 +319,14 @@ def convert_source(
         total = len(products)
         for i, p in enumerate(products, 1):
             rows.extend(
-                build_rows_for_product(p, settings, copy_suffixes=all_suffixes)
+                build_rows_for_product(p, settings, country, copy_suffixes=all_suffixes)
             )
             if progress and total:
                 progress(0.6 + 0.2 * ((i + 1) / total), f"已处理 {i}/{total} 个产品…")
             if i % 10 == 0:
                 time.sleep(0)
-        out_path = output_dir / f"{stem}_TKPH_{ts}.xlsx"
-        write_tiktok_xlsx(out_path, rows, template_src)
+        out_path = output_dir / f"{stem}_TK{country}_{ts}.xlsx"
+        write_tiktok_xlsx(out_path, rows, country)
         output_paths.append(out_path)
         total_rows = len(rows)
         if log:
