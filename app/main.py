@@ -772,8 +772,10 @@ class App(tk.Tk):
         add_check("category_enabled", "启用类目覆盖")
         add_str("category_value", "TikTok 类目：")
         add_section("价格 / 库存 / COD")
+        _ccy_map = {"ID": "IDR", "PH": "PHP", "TH": "THB"}
+        _ccy = _ccy_map.get(self.cfg.get("country", "PH"), "PHP")
         add_check("price_enabled", "启用价格覆盖")
-        add_int("price_value", "价格 (PHP)：")
+        add_int("price_value", f"价格 ({_ccy})：")
         add_check("quantity_enabled", "启用库存覆盖")
         add_int("quantity_value", "库存数量：")
         add_check("cod_enabled", "启用 COD 覆盖")
