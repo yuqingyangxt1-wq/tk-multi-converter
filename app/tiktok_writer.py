@@ -445,9 +445,17 @@ def _build_row_for_variant(
     images = [_clean_str(i) for i in images]
 
     # Price / quantity
-    price_value = _to_number(variant.price) if variant.price not in (None, "") else _to_number(common["price_override"])
+    # v3.3.4: price_enabled/quantity_enabled 勾选即覆盖每行(GUI 承诺的语义);
+    # 未勾选时才透传源表值,源表也缺失则用 override 兜底(None)。
+    price_value = (
+        _to_number(common["price_override"])
+        if common["price_override"] is not None
+        else (_to_number(variant.price) if variant.price not in (None, "") else None)
+    )
     quantity_value = (
-        _to_number(variant.stock) if variant.stock not in (None, "") else _to_number(common["quantity"])
+        _to_number(common["quantity"])
+        if common["quantity"] is not None
+        else (_to_number(variant.stock) if variant.stock not in (None, "") else None)
     )
 
     # Seller SKU
