@@ -152,6 +152,11 @@ def update_settings(cfg: dict[str, Any], **kwargs: Any) -> None:
     cfg["product_xlsx_settings"].update(kwargs)
 
 
+def country_choices() -> list[tuple[str, str]]:
+    """List of (code, display_name) for all supported countries, in display order."""
+    return presets.country_choices()
+
+
 def set_country(cfg: dict[str, Any], country: str) -> None:
     """Switch config to a different country.
 
