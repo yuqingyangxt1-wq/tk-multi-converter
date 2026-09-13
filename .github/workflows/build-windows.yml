@@ -1,0 +1,91 @@
+name: build-windows
+
+# Build the TK multi-country table converter into a single Windows .exe
+# using a GitHub-hosted Windows runner. No Windows machine needed locally.
+#
+# Output: a single exe that supports ID / PH / TH — the user picks the
+# target country from a top-of-window radio in the GUI.
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm "TK-Multi-Converter.spec"
+
+      # Ship all three country assets next to the exe (assets-id, assets-ph,
+      # assets-th). The runtime picks one based on the user's country radio.
+      - name: Copy country assets next to the exe
+        shell: pwsh
+        run: |
+          foreach ($cc in @('id','ph','th')) {
+            $srcDir = "assets-$cc"
+            $dstDir = "dist/assets-$cc"
+            New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+            if (Test-Path "$srcDir/batch-product-source.xlsx") {
+              Copy-Item -Force "$srcDir/batch-product-source.xlsx" "$dstDir/"
+            }
+            if (Test-Path "$srcDir/default_size_chart.png") {
+              Copy-Item -Force "$srcDir/default_size_chart.png" "$dstDir/"
+            }
+          }
+          # Legacy alias: if a user has an old PH config pointing to assets/,
+          # also keep a copy of the PH template under that name.
+          if (Test-Path "dist/assets-ph/batch-product-source.xlsx") {
+            New-Item -ItemType Directory -Force -Path "dist/assets" | Out-Null
+            Copy-Item -Force "dist/assets-ph/batch-product-source.xlsx" "dist/assets/"
+          }
+          Get-ChildItem dist | Select-Object Name
+
+      - name: Zip the release
+        shell: pwsh
+        run: |
+          $name = "TK-Multi-Converter_windows"
+          Compress-Archive -Path "dist\*" -DestinationPath "$name.zip" -Force
+          Get-ChildItem dist, *.zip | Select-Object Name, Length
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TK-Multi-Converter-windows
+          path: |
+            dist/TK-Multi-Converter.exe
+            dist/assets-id/
+            dist/assets-ph/
+            dist/assets-th/
+            dist/assets/
+            TK-Multi-Converter_windows.zip
+          if-no-files-found: error
+          retention-days: 30
